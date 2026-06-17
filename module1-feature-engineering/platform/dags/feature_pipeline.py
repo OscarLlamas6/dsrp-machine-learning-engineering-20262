@@ -184,22 +184,24 @@ def validate_features() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 5. Train (cierra el ciclo: feature store -> training set -> modelo -> MLflow)
+# 5. Train (cierra el ciclo: feature store -> training set -> modelo evaluado)
 # ---------------------------------------------------------------------------
 def train_model() -> dict:
-    """Entrena un clasificador simple con las features materializadas y lo
-    registra en MLflow.
+    """Entrena y evalua un clasificador simple con las features materializadas.
 
     Aqui se cierra el ciclo del modulo: el mismo parquet que alimenta el offline
     store de Feast se usa para construir el training set, se entrena un modelo
-    que predice ``survived``, se evalua y todo (parametros, metricas y el modelo)
-    queda registrado en el servidor compartido de MLflow.
+    que predice ``survived``, se evalua (accuracy / ROC-AUC) y el modelo entrenado
+    se guarda en disco (joblib) en el volumen de datos.
+
+    El seguimiento de experimentos (experiment tracking) y el registro de modelos
+    con MLflow se introducen en el Modulo 2; aqui nos quedamos en entrenar +
+    evaluar + persistir, registrando las metricas en los logs de la tarea.
     """
-    import mlflow
-    import mlflow.sklearn
+    import joblib
     from sklearn.compose import ColumnTransformer
     from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import accuracy_score, roc_auc_score
+    from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
     from sklearn.model_selection import train_test_split
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import OneHotEncoder
@@ -239,22 +241,21 @@ def train_model() -> dict:
     except Exception:
         auc = float("nan")
 
-    # Tracking compartido: MLFLOW_TRACKING_URI=http://mlflow:5000 (dentro de la red).
-    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", "http://mlflow:5000")
-    mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment("module1_feature_pipeline")
+    # Metricas a los logs de la tarea (sin servidor de tracking).
+    print(f"[train] accuracy={acc:.4f}  roc_auc={auc:.4f}")
+    print("[train] classification report:\n" + classification_report(y_test, preds))
 
-    with mlflow.start_run(run_name="airflow_train_model") as run:
-        mlflow.log_param("model", "LogisticRegression")
-        mlflow.log_param("n_features", X.shape[1])
-        mlflow.log_param("n_train", int(len(X_train)))
-        mlflow.log_param("n_test", int(len(X_test)))
-        mlflow.log_metric("accuracy", acc)
-        if auc == auc:  # not NaN
-            mlflow.log_metric("roc_auc", auc)
-        mlflow.sklearn.log_model(model, artifact_path="model")
-        run_id = run.info.run_id
+    # Persistimos el modelo entrenado en el volumen de datos.
+    model_path = DATA_DIR / "titanic_model.joblib"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, model_path)
 
-    report = {"accuracy": acc, "roc_auc": auc, "run_id": run_id, "tracking_uri": tracking_uri}
+    report = {
+        "accuracy": acc,
+        "roc_auc": auc,
+        "n_train": int(len(X_train)),
+        "n_test": int(len(X_test)),
+        "model_path": str(model_path),
+    }
     print(f"[train] {report}")
     return report

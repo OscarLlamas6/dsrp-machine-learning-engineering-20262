@@ -2,24 +2,25 @@
 
 El **Modulo 1** no solo ensena feature engineering: tambien **introduce la
 infraestructura compartida** que usa todo el curso. Esta carpeta `platform/`
-reune en un unico `docker-compose.yml` las tres piezas que se repiten en todos
-los modulos:
+reune en un unico `docker-compose.yml` las piezas que se repiten en los modulos.
+En el Modulo 1 son dos:
 
 1. **Feature store** (Feast) — definir, versionar y servir features.
-2. **Tracking de experimentos** (MLflow 3.x) — registrar parametros, metricas y
-   modelos.
-3. **Orquestacion** (Apache Airflow) — el **orquestador compartido del curso**;
+2. **Orquestacion** (Apache Airflow) — el **orquestador compartido del curso**;
    cada modulo monta sus DAGs aqui.
 
+> El **tracking de experimentos** con MLflow (registrar parametros, metricas y
+> modelos) se introduce en el **Modulo 2**, cuando entramos de lleno al
+> entrenamiento de modelos. El Modulo 1 = Feast + Airflow.
+
 > Idea central: una sola plataforma, muchos modulos. Las features que defines
-> aqui, los experimentos que registras en MLflow y los DAGs que programas en
-> Airflow son los mismos componentes que veras en produccion.
+> aqui y los DAGs que programas en Airflow son los mismos componentes que veras
+> en produccion.
 
 ```
 platform/
 ├── docker-compose.yml        # TODA la infraestructura compartida
 ├── Dockerfile.airflow        # apache/airflow:2.10.5-python3.11 + deps de los 4 modulos
-├── Dockerfile.mlflow         # python:3.11-slim + mlflow>=3.1 (servidor de tracking)
 ├── requirements-airflow.txt  # deps combinadas de los DAGs de TODOS los modulos
 ├── README.md                 # este archivo
 ├── feature_repo/             # repo de Feast (feature_store.yaml, features.py, data/)
@@ -48,8 +49,8 @@ platform/
 |  historia completa    |                           |  un registro por entidad  |
 +-----------------------+                           +---------------------------+
 
-   Airflow (orquestador)  -- entrena -->  MLflow 3.x (tracking)  http://mlflow:5000
-   programa el pipeline                   parametros / metricas / modelos
+   Airflow (orquestador)  -- entrena + evalua -->  modelo (joblib en ./data)
+   programa el pipeline                            metricas en los logs de la tarea
 ```
 
 ### Servicios
@@ -58,24 +59,25 @@ platform/
 |---|---|---|---|
 | `redis` | `redis:7` | **Online store** de Feast (serving) | 6379 |
 | `postgres` | `postgres:16` | Registry / offline backend de Feast | 5432 |
-| `mlflow` | build `Dockerfile.mlflow` | **Servidor MLflow 3.x** (tracking) | 5000 |
-| `mlflow-db` | `postgres:16` | Backend de metadatos de MLflow | (interno) |
 | `airflow-db` | `postgres:16` | Base de metadatos de Airflow | (interno) |
 | `airflow-init` | build `Dockerfile.airflow` | One-shot: migracion + usuario admin | — |
 | `airflow-webserver` | build `Dockerfile.airflow` | **UI de Airflow** | 8080 |
 | `airflow-scheduler` | build `Dockerfile.airflow` | Ejecuta los DAGs | — |
 
 **URIs importantes**
-- MLflow desde el host: `http://localhost:5000`.
-  Dentro de la red de Docker: `http://mlflow:5000` (lo usan los DAGs).
 - Online store de Feast dentro de la red: host `redis` (no `localhost`).
 - Airflow UI: `http://localhost:8080` (usuario `airflow` / `airflow`).
+
+> **Experiment tracking en el Modulo 2.** En el Modulo 1 no hay servidor MLflow.
+> El DAG entrena, evalua y guarda el modelo en disco; el tracking de experimentos
+> con MLflow se introduce en el Modulo 2.
 
 > **Imagen de Airflow PESADA.** `Dockerfile.airflow` instala las dependencias de
 > los cuatro modulos (Feast, scikit-learn, XGBoost, statsmodels, MLflow,
 > qdrant-client, sentence-transformers...). La primera construccion puede tardar
 > varios minutos y pesar varios GB. Es a proposito: un solo orquestador para
-> todo el curso.
+> todo el curso. (La libreria `mlflow` se hornea en la imagen porque los DAGs de
+> modulos posteriores la usan; el Modulo 1 no levanta servidor MLflow.)
 
 ---
 
@@ -94,9 +96,9 @@ volumes:
 
 Asi, al levantar la plataforma desde el Modulo 1, la UI de Airflow muestra los
 DAGs de los cuatro modulos a la vez. Los servicios de Airflow exponen
-`MLFLOW_TRACKING_URI=http://mlflow:5000` y `QDRANT_URL=http://host.docker.internal:6333`
+`QDRANT_URL=http://host.docker.internal:6333`
 (con `extra_hosts: host.docker.internal:host-gateway`) para que cualquier DAG
-pueda registrar en MLflow o hablar con Qdrant.
+pueda hablar con Qdrant.
 
 ---
 
@@ -105,14 +107,11 @@ pueda registrar en MLflow o hablar con Qdrant.
 ```bash
 cd module1-feature-engineering/platform
 
-# Todo (construye las imagenes de Airflow y MLflow):
+# Todo (construye la imagen de Airflow):
 docker compose up -d --build
 
 # Solo la capa Feast (flujo manual / notebooks):
 docker compose up -d redis postgres
-
-# Solo MLflow:
-docker compose up -d --build mlflow
 
 docker compose ps          # espera a que los servicios esten "healthy"
 ```
@@ -156,12 +155,14 @@ del notebook 02 en un pipeline programado y **cierra el ciclo hasta el modelo**:
 | `validate` | Control de calidad: esquema, conteo, clave unica, sin nulos |
 | `feast_apply` | `feast apply` — registra entidades / feature views |
 | `feast_materialize` | `feast materialize-incremental <now>` — carga a Redis |
-| `train_model` | Entrena un clasificador simple y lo **registra en MLflow** |
+| `train_model` | Entrena + evalua un clasificador simple y lo **guarda en disco** |
 
 `train_model` lee el parquet del offline store, entrena una `LogisticRegression`
-que predice `survived`, evalua (accuracy / ROC-AUC) y registra parametros,
-metricas y el modelo en `http://mlflow:5000` (experimento
-`module1_feature_pipeline`).
+que predice `survived`, evalua (accuracy / ROC-AUC), deja las metricas en los logs
+de la tarea y persiste el modelo (`data/titanic_model.joblib`).
+
+> El **experiment tracking** y el **registro de modelos** con MLflow se introducen
+> en el **Modulo 2**.
 
 ### Ejecutarlo
 
@@ -173,8 +174,8 @@ docker compose up -d --build
 docker compose exec airflow-scheduler airflow dags trigger feature_engineering_pipeline
 ```
 
-Luego abre **http://localhost:5000** para ver el run, las metricas y el modelo
-registrado.
+Revisa los **logs de la tarea `train_model`** en la UI de Airflow para ver las
+metricas (accuracy / ROC-AUC).
 
 ---
 
@@ -187,7 +188,7 @@ registrado.
 - **Permisos en logs (Linux)** → fija tu UID antes de levantar:
   `echo "AIRFLOW_UID=$(id -u)" >> .env` en `platform/`, luego `docker compose up -d`.
 - **Cambios de imagen no se reflejan** → `docker compose build --no-cache`.
-- **Puerto 8080 / 5000 ocupado** → cambia el puerto publicado en `docker-compose.yml`.
+- **Puerto 8080 ocupado** → cambia el puerto publicado en `docker-compose.yml`.
 
 ## Teardown
 

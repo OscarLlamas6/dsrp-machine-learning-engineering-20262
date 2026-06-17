@@ -16,8 +16,8 @@ dependencies = [
     # Feature store — el extra [redis] es OBLIGATORIO para el online store
     "feast[redis]>=0.40",
     "redis>=5.0",
-    # Tracking de experimentos (notebook 3 registra el modelo en MLflow 3.x)
-    "mlflow>=3.1",
+    # Persistencia del modelo entrenado (notebook 3 / DAG: joblib.dump)
+    "joblib>=1.3",
     # Deep learning (la rueda CPU basta para el ejemplo de embeddings)
     "torch>=2.1",
     # Herramientas de notebook

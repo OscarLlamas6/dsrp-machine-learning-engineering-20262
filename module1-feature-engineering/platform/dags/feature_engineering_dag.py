@@ -12,8 +12,9 @@ pipeline that CLOSES THE LOOP all the way to a trained, tracked model:
   * validate           data-quality gate (schema / uniqueness / nulls)
   * feast_apply        register entities + feature views in the registry
   * feast_materialize  load latest feature values into the Redis online store
-  * train_model        train a simple classifier and log it to MLflow
-                       (MLFLOW_TRACKING_URI=http://mlflow:5000)
+  * train_model        train + evaluate a simple classifier, log metrics to the
+                       task logs and save the model to disk (no MLflow here;
+                       experiment tracking is introduced in Module 2)
 
 Run it from the Airflow UI at http://localhost:8080 (user/pass: airflow/airflow)
 or trigger it from the CLI:  airflow dags trigger feature_engineering_pipeline
@@ -53,7 +54,7 @@ def _run_feast(*args: str) -> str:
     start_date=datetime(2024, 1, 1),
     catchup=False,
     default_args=DEFAULT_ARGS,
-    tags=["module1", "feature-engineering", "feast", "mlflow"],
+    tags=["module1", "feature-engineering", "feast"],
 )
 def feature_engineering_pipeline():
     @task
@@ -85,7 +86,8 @@ def feature_engineering_pipeline():
     @task
     def train_model() -> dict:
         # Cierra el ciclo: training set desde el parquet del offline store,
-        # entrena el modelo y lo registra en MLflow (http://mlflow:5000).
+        # entrena + evalua el modelo y lo guarda en disco (sin MLflow; el
+        # experiment tracking llega en el Modulo 2).
         return fp.train_model()
 
     raw = extract()
