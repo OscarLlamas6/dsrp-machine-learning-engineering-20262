@@ -219,3 +219,10 @@ __marimo__/
 
 # Course: notebook generator scripts are not shipped
 module1-feature-engineering/_build_notebooks.py
+
+# Data: keep only the small housing CSVs used by Module 1; ignore large/unrelated files
+/data/*
+!/data/.gitkeep
+!/data/housing_train.csv
+!/data/housing_test.csv
+.DS_Store

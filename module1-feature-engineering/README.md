@@ -3,7 +3,9 @@
 Curso de Advanced ML Engineering. Este modulo cubre la transformacion de datos
 crudos en **features** listas para un modelo, como gestionarlas a escala con un
 **feature store** (Feast), y como **cerrar el ciclo** hasta un modelo entrenado y
-evaluado. Ademas, este modulo **introduce la plataforma compartida del curso**:
+evaluado. Trabaja sobre el dataset **Ames Housing** (Kaggle "House Prices",
+`data/housing_train.csv`, 1460 casas) y la tarea es de **regresion**: predecir
+`SalePrice`. Ademas, este modulo **introduce la plataforma compartida del curso**:
 un unico `docker-compose` que levanta Feast y Airflow.
 
 > El seguimiento de experimentos y el registro de modelos con **MLflow** se
@@ -30,7 +32,8 @@ Al terminar este modulo seras capaz de:
    `materialize` y recuperar features **historicas** (entrenamiento) y **online**
    (serving), respaldadas por Redis + Postgres en Docker.
 6. **Cerrar el ciclo**: construir un set de entrenamiento desde el offline store,
-   entrenar un modelo y evaluarlo (accuracy / ROC-AUC / matriz de confusion). El
+   entrenar un modelo de **regresion** que predice `SalePrice` y evaluarlo
+   (RMSE / MAE / R² y el RMSE sobre `log(SalePrice)`, la metrica de Kaggle). El
    *experiment tracking* con MLflow se introduce en el **Modulo 2**.
 7. **Orquestar** todo el pipeline como un DAG programado y observable en
    **Apache Airflow** — el **orquestador compartido del curso**, introducido aqui.
@@ -47,7 +50,7 @@ module1-feature-engineering/
 │   ├── 01_feature_engineering_theory.ipynb   <- seleccion, imputacion, encoding, transformaciones, escalado, PCA, embeddings
 │   ├── 02_outlier_detection.ipynb            <- deteccion de outliers/anomalias (estadistica + ML)
 │   ├── 03_feature_pipeline_feast.ipynb       <- feature store + Feast en la practica
-│   └── 04_pipeline_entrenamiento.ipynb       <- feature store -> modelo entrenado y evaluado
+│   └── 04_pipeline_entrenamiento.ipynb       <- feature store -> regresor (SalePrice) evaluado
 ├── platform/                       <- PLATAFORMA COMPARTIDA DEL CURSO
 │   ├── docker-compose.yml          <- redis + postgres (Feast) + Airflow
 │   ├── Dockerfile.airflow          <- apache/airflow:2.10.5-python3.11 + deps de los 4 modulos
@@ -68,50 +71,64 @@ module1-feature-engineering/
 
 ### Notebook 1 — Teoria de Feature Engineering
 
-Trabaja sobre el dataset del **Titanic** (`seaborn.load_dataset("titanic")`, con
-fallback sintetico sin conexion). El flujo va de la seleccion a los embeddings, y
-cada tecnica combina **intuicion + una formula compacta** con un ejemplo
-ejecutable:
+Trabaja sobre el dataset **Ames Housing** (`data/housing_train.csv`, con un helper
+que localiza el CSV y un fallback sintetico sin conexion). Como el objetivo es
+`SalePrice` (continuo), las tecnicas estan adaptadas a **regresion**. El flujo va de
+la seleccion a los embeddings, y cada tecnica combina **intuicion + una formula
+compacta** con un ejemplo ejecutable:
 
 - **Seleccion de variables** (al principio): filter (`VarianceThreshold`,
-  correlacion, `mutual_info_classif`, chi²), wrapper (`RFE`) y embedded (L1/Lasso,
-  importancia de arboles); seleccion vs extraccion (PCA).
-- **Imputacion** de faltantes: `SimpleImputer` (media/mediana/moda), `KNNImputer`,
-  variable indicadora (`add_indicator`); el Titanic tiene NaN reales en `age` /
-  `embark_town`.
-- **Encoding**: label / ordinal (con el riesgo de imponer un orden falso), one-hot
-  (cardinalidad y dispersion) y feature hashing (colisiones, memoria).
-- **Transformaciones**: log / `log1p`, Box-Cox y Yeo-Johnson (`PowerTransformer`)
-  con histogramas antes/despues y skew; binning (uniforme vs cuantiles).
-- **Escalado**: estandarizacion (z-score), robusto (mediana/IQR), min-max y L2.
+  correlacion, `f_regression`, `mutual_info_regression` — **no `chi2`**, que es para
+  objetivos categoricos), wrapper (`RFE` con un regresor) y embedded (**Lasso**,
+  importancia de `RandomForestRegressor`) contra `SalePrice`.
+- **Imputacion** de faltantes: Ames tiene faltantes REALES y con dos significados —
+  `NaN` = "feature ausente" (`PoolQC`, `Alley`, `FireplaceQu`, `GarageType` ->
+  `"None"`/0) vs faltante genuino (`LotFrontage` -> mediana, `Electrical` -> moda).
+  `SimpleImputer`, `KNNImputer`, variable indicadora (`add_indicator`).
+- **Encoding**: ordinal para las notas de calidad reales (`ExterQual`, `BsmtQual`,
+  `KitchenQual`, `HeatingQC`, `FireplaceQu` con orden Po<Fa<TA<Gd<Ex), one-hot para
+  nominales (`MSZoning`, `BldgType`, `Foundation`, `CentralAir`) y feature hashing
+  del `Neighborhood` de alta cardinalidad (25 barrios; colisiones, memoria).
+- **Transformaciones**: log / `log1p` de `SalePrice` (skew 1.88 -> 0.12; ¡es la
+  metrica de Kaggle!) y `LotArea`/`GrLivArea`; Box-Cox y Yeo-Johnson
+  (`PowerTransformer`) con histogramas antes/despues y skew; binning
+  (`YearBuilt` -> decadas, `GrLivArea` -> cuantiles).
+- **Escalado**: estandarizacion (z-score), robusto (mediana/IQR; ideal por los
+  outliers de Ames), min-max y L2.
 - **Reduccion de dimensionalidad** (PCA: covarianza, autovectores, varianza explicada).
-- **Embeddings** (vectores densos aprendidos vs one-hot; `nn.Embedding` de PyTorch).
+- **Embeddings** del `Neighborhood` (vectores densos aprendidos vs one-hot;
+  `nn.Embedding` de PyTorch, dim 8).
 
 Cierra con una **tabla resumen** de cuando usar cada tecnica.
 
 ### Notebook 2 — Deteccion de Outliers y Anomalias
 
 Trata los outliers / anomalias como un paso de **limpieza de datos** dentro del
-feature engineering. Cubre **metodos estadisticos** (z-score, regla IQR / vallas de
-Tukey, z-score modificado con MAD) con boxplots y scatter, **metodos basados en ML**
-(Isolation Forest y DBSCAN) con visualizacion 2D y comparacion
-por ROC-AUC sobre outliers inyectados, y **que hacer** con ellos (eliminar,
-winsorizar o transformar). Sin MLflow.
+feature engineering, usando el ejemplo canonico de Ames: el scatter de `GrLivArea`
+vs `SalePrice` y las **4 casas con `GrLivArea > 4000`** (dos ventas parciales
+vendidas baratas). Cubre **metodos estadisticos** (z-score, regla IQR / vallas de
+Tukey, z-score modificado con MAD sobre `GrLivArea`, `LotArea`, `SalePrice`) con
+boxplots y scatter, **metodos basados en ML** (Isolation Forest y DBSCAN sobre el
+plano 2D `[GrLivArea, SalePrice]` estandarizado) con comparacion por ROC-AUC, y
+**que hacer** con ellos (eliminar las 4 casas gigantes, winsorizar o transformar).
+Sin MLflow.
 
 ### Notebook 3 — Pipeline de Features con Feast
 
 Teoria de un feature store (offline vs online store, correctitud point-in-time,
 materializacion, reutilizacion) seguida de un pipeline practico de Feast que hace
-ingenieria de features del Titanic, las escribe a parquet y corre `apply` /
+ingenieria de un conjunto curado de features de Ames Housing (entidad `house` con
+clave `house_id`, nombres snake_case), las escribe a parquet y corre `apply` /
 `materialize` / `get_historical_features` / `get_online_features`.
 
 ### Notebook 4 — Pipeline de Entrenamiento (cierra el ciclo)
 
 Construye el set de entrenamiento desde el **offline store** de Feast con
-`get_historical_features` (con fallback a parquet), entrena un clasificador simple
-que predice `survived` y lo evalua (accuracy / ROC-AUC / matriz de confusion),
-mostrando los resultados en linea. Explica el concepto central: *feature store →
-set de entrenamiento → modelo* y la **consistencia entrenamiento-serving**. El
+`get_historical_features` (con fallback a parquet), entrena un **regresor**
+(`RandomForestRegressor` sobre `log1p(SalePrice)`) que predice `SalePrice` y lo
+evalua (RMSE / MAE / R² y el RMSE sobre `log(SalePrice)` de Kaggle), con un grafico
+predicho vs real. Explica el concepto central: *feature store → set de
+entrenamiento → modelo* y la **consistencia entrenamiento-serving**. El
 *experiment tracking* y el Model Registry con MLflow se cubren en el **Modulo 2**.
 
 ## Arquitectura de Feast
@@ -150,9 +167,10 @@ evaluado**:
   y base de metadatos. Es el **orquestador compartido del curso**: monta los DAGs
   de los cuatro modulos en subcarpetas de `/opt/airflow/dags`.
 
-La tarea `train_model` lee el parquet del offline store, entrena una
-`LogisticRegression` que predice `survived`, la evalua (accuracy / ROC-AUC), deja
-las metricas en los logs de la tarea y guarda el modelo en disco (joblib).
+La tarea `train_model` lee el parquet del offline store, entrena un
+`RandomForestRegressor` que predice `SalePrice` (sobre `log1p`), lo evalua
+(RMSE / MAE / R²), deja las metricas en los logs de la tarea y guarda el modelo en
+disco (joblib).
 
 > El **seguimiento de experimentos** y el **registro de modelos** con MLflow se
 > introducen en el **Modulo 2** (entrenamiento de modelos).
@@ -195,7 +213,7 @@ uv run jupyter lab
 cd platform && docker compose up -d redis postgres
 
 # corre el notebook 03 (Feast) para generar
-#   platform/feature_repo/data/titanic_features.parquet
+#   platform/feature_repo/data/housing_features.parquet
 # luego, desde el repo de features:
 cd feature_repo
 feast apply

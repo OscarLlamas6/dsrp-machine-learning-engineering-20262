@@ -1,20 +1,21 @@
 """Module 1 — Feature Engineering pipeline orchestrated with Apache Airflow.
 
-This DAG turns the manual steps from notebook 02 into a scheduled, observable
-pipeline that CLOSES THE LOOP all the way to a trained, tracked model:
+This DAG turns the manual steps from notebook 03 into a scheduled, observable
+pipeline that CLOSES THE LOOP all the way to a trained, evaluated regressor on the
+Ames "House Prices" dataset (target: SalePrice):
 
     extract -> prepare_feast_repo -> transform -> validate -> feast_apply
             -> feast_materialize -> train_model
 
-  * extract            load raw Titanic data (synthetic fallback if offline)
+  * extract            read the Ames Housing CSV (synthetic fallback if missing)
   * prepare_feast_repo render a container-targeted Feast repo (redis service host)
-  * transform          engineer features -> parquet (schema matches features.py)
+  * transform          engineer housing features -> parquet (schema matches features.py)
   * validate           data-quality gate (schema / uniqueness / nulls)
   * feast_apply        register entities + feature views in the registry
   * feast_materialize  load latest feature values into the Redis online store
-  * train_model        train + evaluate a simple classifier, log metrics to the
-                       task logs and save the model to disk (no MLflow here;
-                       experiment tracking is introduced in Module 2)
+  * train_model        train + evaluate a regressor predicting SalePrice, log
+                       metrics (RMSE/MAE/R2) to the task logs and save the model to
+                       disk (no MLflow here; experiment tracking is in Module 2)
 
 Run it from the Airflow UI at http://localhost:8080 (user/pass: airflow/airflow)
 or trigger it from the CLI:  airflow dags trigger feature_engineering_pipeline
@@ -49,7 +50,7 @@ def _run_feast(*args: str) -> str:
 
 @dag(
     dag_id="feature_engineering_pipeline",
-    description="Engineer Titanic features and materialize them into Feast (Module 1).",
+    description="Engineer Ames Housing features and materialize them into Feast (Module 1).",
     schedule="@daily",
     start_date=datetime(2024, 1, 1),
     catchup=False,

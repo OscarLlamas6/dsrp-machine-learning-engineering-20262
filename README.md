@@ -52,7 +52,7 @@ soporte.
 
 | Tema | Qué aprenderás |
 |------|----------------|
-| Selección de variables | Filtro (varianza, MI, chi²), wrapper (RFE), embebido (L1, importancia de árboles); selección vs. extracción |
+| Selección de variables | Filtro (varianza, F-test/`f_regression`, info. mutua), wrapper (RFE), embebido (Lasso, importancia de árboles); selección vs. extracción |
 | Imputación | Valores faltantes: media/mediana/moda, KNN, variable indicadora |
 | Encoding | Label/ordinal, one-hot, feature hashing (y sus trampas) |
 | Transformaciones | Log/log1p, Box-Cox y Yeo-Johnson, bucketing / binning |
@@ -61,22 +61,24 @@ soporte.
 | Embeddings | Representaciones densas aprendidas para categóricas/texto |
 | **Detección de outliers / anomalías** | Estadísticos (z-score, IQR/Tukey, MAD) y basados en ML (Isolation Forest, DBSCAN); eliminar / winsorizar / transformar |
 | **Feature stores** | Concepto, serving online/offline, correctitud point-in-time con **Feast** |
-| **Pipeline de entrenamiento** | Cerrar el ciclo: feature store → set de entrenamiento → modelo entrenado y evaluado (el experiment tracking con MLflow llega en el **Módulo 2**) |
+| **Pipeline de entrenamiento** | Cerrar el ciclo: feature store → set de entrenamiento → **regresor** que predice `SalePrice` (Ames Housing), evaluado con RMSE/MAE/R² (el experiment tracking con MLflow llega en el **Módulo 2**) |
 | **Orquestación** | El orquestador **Apache Airflow** compartido del curso (introducido aquí) corriendo todo el pipeline |
 
 **Entregables**
 - `notebooks/01_feature_engineering_theory.ipynb` — selección de variables,
   imputación, encoding (label/one-hot/hashing), transformaciones (log,
   Box-Cox/Yeo-Johnson, binning), escalado, PCA y embeddings, con matemática y
-  ejemplos sobre un dataset real (en español).
+  ejemplos sobre el dataset real **Ames Housing** (Kaggle House Prices, regresión
+  sobre `SalePrice`) (en español).
 - `notebooks/02_outlier_detection.ipynb` — detección de outliers / anomalías como
   paso de limpieza: métodos estadísticos (z-score, IQR/Tukey, MAD) y basados en ML
   (Isolation Forest, DBSCAN), más cómo tratarlos (en español).
 - `notebooks/03_feature_pipeline_feast.ipynb` — un pipeline de features que
   materializa y sirve las características (en español).
 - `notebooks/04_pipeline_entrenamiento.ipynb` — cierra el ciclo: construye un set
-  de entrenamiento desde Feast, entrena y evalúa un modelo (en español). El
-  experiment tracking con MLflow se introduce en el Módulo 2.
+  de entrenamiento desde Feast, entrena y evalúa un **regresor** que predice
+  `SalePrice` (RMSE/MAE/R²) (en español). El experiment tracking con MLflow se
+  introduce en el Módulo 2.
 - `platform/` — la **plataforma compartida del curso**: un único
   `docker-compose.yml` con Feast (Redis + Postgres) y el stack de **Airflow**
   compartido. Contiene `feature_repo/` (Feast) y `dags/` (el DAG del Módulo 1:

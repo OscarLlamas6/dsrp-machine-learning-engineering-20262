@@ -43,6 +43,8 @@ x-airflow-common: &airflow-common
     FEAST_REPO_SRC: /opt/airflow/feature_repo_src
     FEAST_REDIS_HOST: redis
     FEAST_REDIS_PORT: "6379"
+    # Ruta del CSV de Ames Housing dentro del contenedor (ver volumenes abajo).
+    HOUSING_CSV: /opt/airflow/housing_data/housing_train.csv
     # Vector DB para los DAGs de modulos posteriores.
     QDRANT_URL: http://host.docker.internal:6333
   extra_hosts:
@@ -55,6 +57,8 @@ x-airflow-common: &airflow-common
     - ../../module4-genai/airflow/dags:/opt/airflow/dags/module4
     # El repo de features (read-only) se monta aparte para que el DAG lo copie.
     - ./feature_repo:/opt/airflow/feature_repo_src:ro
+    # El CSV de Ames Housing (repo-root data/) montado read-only para el DAG.
+    - ../../data:/opt/airflow/housing_data:ro
     - airflow-logs:/opt/airflow/logs
     - airflow-data:/opt/airflow/data
     - feast-repo:/opt/airflow/feast_repo

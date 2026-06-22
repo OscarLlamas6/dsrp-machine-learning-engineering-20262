@@ -1,9 +1,10 @@
 # Plataforma compartida del curso (`platform/`)
 
-El **Modulo 1** no solo ensena feature engineering: tambien **introduce la
-infraestructura compartida** que usa todo el curso. Esta carpeta `platform/`
-reune en un unico `docker-compose.yml` las piezas que se repiten en los modulos.
-En el Modulo 1 son dos:
+El **Modulo 1** no solo ensena feature engineering (sobre el dataset **Ames
+Housing**, prediciendo `SalePrice` — una tarea de **regresion**): tambien
+**introduce la infraestructura compartida** que usa todo el curso. Esta carpeta
+`platform/` reune en un unico `docker-compose.yml` las piezas que se repiten en
+los modulos. En el Modulo 1 son dos:
 
 1. **Feature store** (Feast) — definir, versionar y servir features.
 2. **Orquestacion** (Apache Airflow) — el **orquestador compartido del curso**;
@@ -139,7 +140,7 @@ pip install "feast[redis]" redis
 ## El pipeline cerrado (Modulo 1)
 
 El DAG `feature_engineering_pipeline` (en `dags/`) convierte los pasos manuales
-del notebook 02 en un pipeline programado y **cierra el ciclo hasta el modelo**:
+del notebook 03 en un pipeline programado y **cierra el ciclo hasta el modelo**:
 
 ```
  extract -+
@@ -149,17 +150,17 @@ del notebook 02 en un pipeline programado y **cierra el ciclo hasta el modelo**:
 
 | Tarea | Que hace |
 |------|----------|
-| `extract` | Carga Titanic crudo (fallback sintetico si no hay red) → `data/titanic_raw.parquet` |
+| `extract` | Lee el CSV de Ames Housing (`HOUSING_CSV`; fallback sintetico) → `data/housing_raw.parquet` |
 | `prepare_feast_repo` | Renderiza un repo de Feast apuntando al servicio `redis` |
-| `transform` | Ingenieria de features → `feast_repo/data/titanic_features.parquet` |
-| `validate` | Control de calidad: esquema, conteo, clave unica, sin nulos |
+| `transform` | Ingenieria de features → `feast_repo/data/housing_features.parquet` |
+| `validate` | Control de calidad: esquema, conteo, clave unica (`house_id`), sin nulos |
 | `feast_apply` | `feast apply` — registra entidades / feature views |
 | `feast_materialize` | `feast materialize-incremental <now>` — carga a Redis |
-| `train_model` | Entrena + evalua un clasificador simple y lo **guarda en disco** |
+| `train_model` | Entrena + evalua un regresor (`SalePrice`) y lo **guarda en disco** |
 
-`train_model` lee el parquet del offline store, entrena una `LogisticRegression`
-que predice `survived`, evalua (accuracy / ROC-AUC), deja las metricas en los logs
-de la tarea y persiste el modelo (`data/titanic_model.joblib`).
+`train_model` lee el parquet del offline store, entrena un `RandomForestRegressor`
+que predice `SalePrice` (sobre `log1p`), evalua (RMSE / MAE / R²), deja las metricas
+en los logs de la tarea y persiste el modelo (`data/housing_model.joblib`).
 
 > El **experiment tracking** y el **registro de modelos** con MLflow se introducen
 > en el **Modulo 2**.
@@ -175,7 +176,7 @@ docker compose exec airflow-scheduler airflow dags trigger feature_engineering_p
 ```
 
 Revisa los **logs de la tarea `train_model`** en la UI de Airflow para ver las
-metricas (accuracy / ROC-AUC).
+metricas (RMSE / MAE / R²).
 
 ---
 
